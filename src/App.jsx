@@ -101,7 +101,8 @@ function InsightFlag({ text }) {
 function compute(inputs) {
   const {
     revenueTarget, dealSize, winRate, cycleMonths, grossMargin,
-    inboundRatio, competitive, existingRevenue, totalAccounts, channelMix
+    inboundRatio, competitive, existingRevenue, totalAccounts, channelMix,
+    churnRate, contractLength
   } = inputs;
 
   const winRateDec = winRate / 100;
@@ -109,9 +110,12 @@ function compute(inputs) {
   const inboundDec = inboundRatio / 100;
   const partnerDec = channelMix / 100;
   const directDec = 1 - partnerDec;
+  const churnDec = churnRate / 100;
 
-  // New revenue needed
-  const newRevNeeded = Math.max(0, revenueTarget - existingRevenue);
+  // Churn-adjusted revenue needed
+  // Existing base erodes by churn rate; must be replaced before growing
+  const churnLoss = existingRevenue * churnDec;
+  const newRevNeeded = Math.max(0, revenueTarget - existingRevenue + churnLoss);
 
   // Deals needed to hit target
   const dealsNeeded = newRevNeeded / dealSize;
@@ -141,8 +145,10 @@ function compute(inputs) {
   const coverageMultiple = dealSize > 150000 ? 5 : dealSize > 50000 ? 4 : 3;
   const pipelineNeeded = newRevNeeded * coverageMultiple;
 
-  // CAC ceiling
-  const ltv = dealSize * (1 / (1 - Math.min(0.9, winRateDec * 0.3 + 0.7))) * marginDec;
+  // CAC ceiling — adjusted for contract length
+  // Multi-year contracts extend LTV, raising the CAC ceiling meaningfully
+  const contractMultiplier = contractLength === "multiyear3" ? 2.4 : contractLength === "multiyear2" ? 1.7 : 1.0;
+  const ltv = dealSize * contractMultiplier * (1 / (1 - Math.min(0.9, winRateDec * 0.3 + 0.7))) * marginDec;
   const cacCeiling = ltv * 0.33; // 3:1 LTV:CAC
 
   // Actual CAC estimate
@@ -179,6 +185,17 @@ function compute(inputs) {
 
   if (grossMargin < 40 && dealSize < 25000) flags.push(`Low margin (${grossMargin}%) combined with small deal size (${formatCurrency(dealSize)}) creates a tight CAC window. Direct outbound economics are very challenging at this combination — partner or channel motion may be the only path to positive unit economics.`);
 
+  // Churn flags
+  if (churnRate > 0) {
+    const churnBurden = Math.round((churnLoss / newRevNeeded) * 100);
+    if (churnBurden > 30) flags.push(`Churn is consuming ${churnBurden}% of your new business effort before you grow a dollar. At ${churnRate}% annual churn on a ${formatCurrency(existingRevenue)} base, you're losing ${formatCurrency(Math.round(churnLoss))} per year that new business must replace first. Retention investment has higher ROI than new logo acquisition at this ratio.`);
+    else if (churnBurden > 15) insights.push(`Churn adds ${formatCurrency(Math.round(churnLoss))} to your effective new revenue target — ${churnBurden}% of your new business burden is replacement, not growth. Worth tracking as a separate line in your revenue plan.`);
+  }
+
+  // Contract length insight
+  if (contractLength === "multiyear3") insights.push(`3-year contracts significantly raise your CAC ceiling by extending LTV — your allowable acquisition cost is roughly 2.4x what it would be on annual contracts. This justifies higher investment in enterprise sales motions and longer deal cycles.`);
+  else if (contractLength === "multiyear2") insights.push(`2-year contracts extend LTV and raise your CAC ceiling ~70% above annual contract economics. This gives you meaningful room to invest in longer-cycle, higher-touch sales motions if the deal size warrants it.`);
+
   if (winRate > 40 && competitive === "contested") insights.push(`A ${winRate}% win rate in a contested market is strong. Protect it by formalizing what's working — document your win patterns, isolate the deal characteristics that correlate with wins, and build those into qualification criteria.`);
 
   if (inboundDec > 0.5 && competitive === "greenfield") insights.push(`High inbound in a greenfield market suggests strong category creation traction. This is a window — invest in content and community now to build defensible inbound before competitors commoditize the category.`);
@@ -191,7 +208,7 @@ function compute(inputs) {
     aeCount, sdrCount, pipelineNeeded, coverageMultiple,
     dealsNeeded: Math.ceil(dealsNeeded), oppsNeeded: Math.ceil(oppsNeeded),
     cacCeiling, estimatedCac, runwayYears,
-    newRevNeeded, partnerRevenue, directRevenue,
+    newRevNeeded, partnerRevenue, directRevenue, churnLoss,
     sequencing, flags, insights, activeDealSlots,
     dealsPerRepPerYear: Math.round(dealsPerRepPerYear * 10) / 10
   };
@@ -206,7 +223,10 @@ function buildNarrative(inputs, results) {
   const seqLabel = motionMap[sequencing];
   const compLabel = compMap[competitive];
 
-  const existingCover = existingRevenue > 0 ? ` With ${Math.round((existingRevenue/revenueTarget)*100)}% of the target covered by existing revenue, the new business motion needs to generate ${formatCurrency(newRevNeeded)} in net new ARR.` : "";
+  const churnNote = inputs.churnRate > 0 && results.churnLoss > 0
+    ? ` Churn erodes ${formatCurrency(Math.round(results.churnLoss))} of the existing base annually, so the gross new revenue requirement is ${formatCurrency(results.newRevNeeded)} — not just the gap to target.`
+    : "";
+  const existingCover = existingRevenue > 0 ? ` With ${Math.round((existingRevenue/revenueTarget)*100)}% of the target covered by existing revenue, the new business motion needs to generate ${formatCurrency(results.newRevNeeded)} in net new ARR.${churnNote}` : "";
 
   const cacNote = estimatedCac > cacCeiling
     ? ` Unit economics are tight — estimated CAC (${formatCurrency(Math.round(estimatedCac))}) is above the margin-adjusted ceiling (${formatCurrency(Math.round(cacCeiling))}), which warrants either improving win rate or reducing rep cost structure before scaling.`
@@ -228,6 +248,8 @@ const defaultInputs = {
   existingRevenue: 1000000,
   totalAccounts: 2000,
   channelMix: 0,
+  churnRate: 10,
+  contractLength: "annual",
 };
 
 export default function GTMCoverageDesigner() {
@@ -303,6 +325,30 @@ export default function GTMCoverageDesigner() {
 
           <InputField label="Total Addressable Accounts" tooltip="How many companies in your ICP exist in the market you're pursuing. Used to calculate runway.">
             <SliderInput value={inputs.totalAccounts} onChange={v => set("totalAccounts", v)} min={100} max={50000} step={100} format={v => formatNumber(v) + " accts"} />
+          </InputField>
+
+          <InputField label="Annual Churn Rate" tooltip="Percentage of existing ARR lost annually to churn. Leave at 0 for new business only models. Adjusts gross new revenue required.">
+            <SliderInput value={inputs.churnRate} onChange={v => set("churnRate", v)} min={0} max={40} step={1} format={v => v === 0 ? "No churn" : `${v}% churn`} />
+          </InputField>
+
+          <InputField label="Contract Length" tooltip="Longer contracts increase LTV and raise your CAC ceiling — allowing higher investment per deal. Annual assumes 1-year contracts.">
+            <SegmentButton
+              value={inputs.contractLength}
+              onChange={v => set("contractLength", v)}
+              options={[{ label: "Monthly", value: "monthly" }, { label: "Annual", value: "annual" }, { label: "2-Year", value: "multiyear2" }, { label: "3-Year", value: "multiyear3" }]}
+            />
+          </InputField>
+
+          <InputField label="Annual Churn Rate" tooltip="Percentage of existing ARR lost annually to churn. Leave at 0 for new business only models. Adjusts gross new revenue required.">
+            <SliderInput value={inputs.churnRate} onChange={v => set("churnRate", v)} min={0} max={40} step={1} format={v => v === 0 ? "No churn" : `${v}% churn`} />
+          </InputField>
+
+          <InputField label="Contract Length" tooltip="Longer contracts increase LTV and raise your CAC ceiling — allowing higher investment per deal. Annual assumes 1-year contracts.">
+            <SegmentButton
+              value={inputs.contractLength}
+              onChange={v => set("contractLength", v)}
+              options={[{ label: "Monthly", value: "monthly" }, { label: "Annual", value: "annual" }, { label: "2-Year", value: "multiyear2" }, { label: "3-Year", value: "multiyear3" }]}
+            />
           </InputField>
 
           <InputField label="Competitive Position" tooltip="Greenfield: creating a new category. Contested: established category with active competition. Displacement: replacing an incumbent.">
@@ -385,7 +431,8 @@ export default function GTMCoverageDesigner() {
                 {[
                   ["Revenue target", formatCurrency(inputs.revenueTarget)],
                   ["Existing / recurring base", formatCurrency(inputs.existingRevenue)],
-                  ["New revenue needed", formatCurrency(results.newRevNeeded)],
+                  ["Annual churn loss", inputs.churnRate > 0 ? `−${formatCurrency(Math.round(results.churnLoss))}` : "—"],
+                  ["Gross new revenue needed", formatCurrency(results.newRevNeeded)],
                   ["Deals to close", results.dealsNeeded],
                   ["Opportunities needed", formatNumber(results.oppsNeeded)],
                   ["Pipeline required", formatCurrency(results.pipelineNeeded)],
