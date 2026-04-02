@@ -15,10 +15,10 @@ const T = {
   textMuted:    "#6b7280",
   textFaint:    "#9ca3af",
   // Accent — indigo
-  accent:       "#4f46e5",
-  accentLight:  "#eef2ff",
-  accentBorder: "#c7d2fe",
-  accentText:   "#4338ca",
+  accent:       "#1a6b3c",
+  accentLight:  "#f0fdf4",
+  accentBorder: "#bbf7d0",
+  accentText:   "#166534",
   // States
   success:      "#16a34a",
   successLight: "#f0fdf4",
@@ -32,7 +32,7 @@ const T = {
   // Input
   inputBg:      "#ffffff",
   inputBorder:  "#d1d5db",
-  inputFocus:   "#4f46e5",
+  inputFocus:   "#1a6b3c",
   // Mono font for labels/numbers
   mono:         "'DM Mono', monospace",
   sans:         "'Inter', sans-serif",
@@ -330,8 +330,8 @@ export default function GTMCoverageDesigner() {
         * { box-sizing: border-box; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         input[type=range] { -webkit-appearance: none; height: 3px; border-radius: 2px; background: #e5e7eb; outline: none; cursor: pointer; width: 100%; }
-        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #4f46e5; cursor: pointer; border: 2px solid white; box-shadow: 0 1px 4px rgba(79,70,229,0.35); }
-        input:focus, select:focus { outline: 2px solid #4f46e5; outline-offset: 2px; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #1a6b3c; cursor: pointer; border: 2px solid white; box-shadow: 0 1px 4px rgba(79,70,229,0.35); }
+        input:focus, select:focus { outline: 2px solid #1a6b3c; outline-offset: 2px; }
       `}</style>
 
       {/* Header */}
